@@ -1,60 +1,20 @@
-import os
 import sqlite3
-from pathlib import Path
-
-from dotenv import load_dotenv
-import certifi
-
-load_dotenv()
-
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, START, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.sqlite import SqliteSaver
-from tools import tools
 
-Path("data").mkdir(exist_ok=True)
-
-
-# Update default and allowed models to use Gemini 2.5
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-ALLOWED_MODELS = {
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash-lite", # Included the lite version if needed
-    "gemini-1.5-flash",      # Kept for fallback compatibility 
-    "gemini-1.5-pro"
-}
-
-
-
-SYSTEM_PROMPT = """
-You are a helpful Agentic AI assistant named BappyGPT similar to ChatGPT.
-
-You can:
-1. Answer normal questions.
-2. Use tools when needed.
-3. Search uploaded documents using the RAG tool.
-4. Search the web for latest/current information using Tavily Search.
-5. Remember important user information using the memory tool.
-6. Recall memory when useful.
-7. Use calculator for math.
-
-Rules:
-- If the user asks about latest news, current events, recent updates, today's information, current prices, current people, current versions, new releases, or anything time-sensitive, use Tavily Search.
-- If the user asks about an uploaded document, use search_uploaded_documents.
-- If the user asks you to remember something, use remember_this.
-- If the user asks about previous preferences or saved facts, use recall_memory.
-- Use calculator for math questions.
-- When using web search, summarize clearly and mention that the answer is based on web search results.
-- Be clear, helpful, and concise.
-"""
-
+from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.tools import tools
+from app.config import (
+    ALLOWED_MODELS,
+    CHECKPOINT_DB_PATH,
+    DEFAULT_MODEL,
+    MODEL_PROVIDERS,
+)
 
 
 def normalize_model_name(model_name: str | None) -> str:
@@ -74,21 +34,39 @@ def normalize_model_name(model_name: str | None) -> str:
     return model_name
 
 
+def build_llm(model_name: str):
+    """
+    Create the chat model for the provider that serves model_name.
+    """
+
+    provider = MODEL_PROVIDERS[model_name]
+
+    if provider == "groq":
+        return ChatGroq(
+            model=model_name,
+            temperature=0.3,
+            streaming=True,
+            max_retries=1,
+            timeout=30,
+        )
+
+    return ChatGoogleGenerativeAI(
+        model=model_name,
+        temperature=0.3,
+        streaming=True,
+        max_retries=1,
+        timeout=30,
+    )
 
 
 def build_agent(model_name: str):
     """
-    Build one LangGraph agent for a selected Gemini model.
+    Build one LangGraph agent for the selected model.
     """
 
     selected_model = normalize_model_name(model_name)
 
-    # Initialize ChatGoogleGenerativeAI
-    llm = ChatGoogleGenerativeAI(
-        model=selected_model,
-        temperature=0.3,
-        streaming=True
-    )
+    llm = build_llm(selected_model)
 
     llm_with_tools = llm.bind_tools(tools)
 
@@ -113,7 +91,7 @@ def build_agent(model_name: str):
     workflow.add_edge("tools", "chatbot")
 
     conn = sqlite3.connect(
-        "data/langgraph_checkpoints.sqlite",
+        CHECKPOINT_DB_PATH,
         check_same_thread=False
     )
 
