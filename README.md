@@ -2,6 +2,8 @@
 
 An agentic, ChatGPT-style assistant built with FastAPI and LangGraph. It streams answers in real time, searches the web, answers questions about your uploaded documents (RAG), and keeps long-term memory across conversations.
 
+**Live demo:** https://rakgpt.onrender.com (free hosting: the first request after a pause can take about a minute while the server wakes up)
+
 ## Features
 
 - **Agent with tools.** A LangGraph agent decides when to call a tool: web search, document search, memory, or a calculator.
